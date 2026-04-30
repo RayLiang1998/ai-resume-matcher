@@ -4,8 +4,17 @@ import re
 from datetime import datetime
 import os
 
+import streamlit as st
+
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+api_key = os.getenv("OPENAI_API_KEY")
+
+# If running on Streamlit Cloud, use secrets
+if not api_key:
+    api_key = st.secrets.get("OPENAI_API_KEY")
+
+client = OpenAI(api_key=api_key)
 
 
 def check_input_relevance(resume, jd):

@@ -1,6 +1,7 @@
 import re
 import streamlit as st
 from src.file_reader import extract_text_from_file
+import requests
 
 from src.matcher import compute_match_score
 from src.rewriter import (
@@ -51,6 +52,40 @@ st.write(
 if "results" not in st.session_state:
     st.session_state.results = None
 
+# n8n
+N8N_WEBHOOK_URL = "https://yjliang.app.n8n.cloud/webhook/resume-agent"
+
+def extract_n8n_text(response_json):
+    """
+    Extract the text output from the n8n OpenAI response.
+    This handles the nested JSON structure returned by n8n.
+    """
+    try:
+        return response_json["output"][0]["content"][0]["text"]
+    except Exception:
+        return str(response_json)
+
+
+def call_n8n_next_action(resume, jd, original_score, improved_score, missing_skills):
+    """
+    Call the n8n workflow to generate a recommended next action.
+    """
+    payload = {
+        "resume": resume,
+        "jd": jd,
+        "original_score": original_score,
+        "improved_score": improved_score,
+        "missing_skills": missing_skills,
+    }
+
+    response = requests.post(
+        N8N_WEBHOOK_URL,
+        json=payload,
+        timeout=60
+    )
+
+    response.raise_for_status()
+    return extract_n8n_text(response.json())
 
 resume = ""
 jd = ""
@@ -154,6 +189,7 @@ if st.button("Analyze & Improve"):
                 "improvements": improvements,
                 "missing_suggestions": missing_suggestions,
                 "cover_letter": cover_letter,
+                "n8n_next_action": None,
             }
 
 
@@ -237,6 +273,32 @@ if st.session_state.results:
         "Important: Missing skills should be learned or gained through real experience. "
         "The system should not add unsupported qualifications to the resume."
     )
+
+    st.subheader("Recommended Next Action via n8n")
+
+    st.write(
+        "This section uses an external n8n workflow to generate one practical next action "
+        "based on the resume, job description, match scores, and missing skills."
+    )
+
+    if st.button("Generate Recommended Next Action", key="generate_n8n_next_action"):
+        with st.spinner("Calling n8n workflow..."):
+            try:
+                next_action = call_n8n_next_action(
+                    resume=resume,
+                    jd=jd,
+                    original_score=original_score,
+                    improved_score=improved_score,
+                    missing_skills=missing_suggestions,
+                )
+
+                st.session_state.results["n8n_next_action"] = next_action
+
+            except Exception as e:
+                st.error(f"n8n workflow error: {e}")
+
+    if st.session_state.results.get("n8n_next_action"):
+        st.success(st.session_state.results["n8n_next_action"])
 
     # Generate PDF files after placeholder replacement
     improved_resume_pdf = text_to_pdf_bytes(
